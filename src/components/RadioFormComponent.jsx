@@ -79,6 +79,12 @@ const RadioFormComponent = () => {
 
     try {
       let sectionsCount;
+
+      let neededWords = 1000
+      if (desiredWordCount < 10000){
+        neededWords = Math.max(100, Math.floor((desiredWordCount - 1000) / 1000) * 100);
+      }
+        
       // Original formula for o1-preview
       if (selectedModel === "o1-preview") {
         sectionsCount = desiredWordCount > 1200 ? Math.ceil(desiredWordCount / 1200) : 1;
@@ -90,7 +96,7 @@ const RadioFormComponent = () => {
       const initialMessages = [
         {
           role: "user",
-          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount} objects
+          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount} (IF NUMBER IS LESS THEN 10 CHANGE IT TO 10) objects
           that should have the following structure:
           {
             "id": "Section ID",
@@ -164,6 +170,7 @@ const RadioFormComponent = () => {
       const batchSize = 5;
       let batchIndex = 0;
 
+
       while (batchIndex * batchSize < titles.length) {
         const batch = titles.slice(batchIndex * batchSize, batchIndex * batchSize + batchSize);
 
@@ -176,7 +183,7 @@ const RadioFormComponent = () => {
             {
               role: "user",
               content: `
-              You are a storyteller/narator and must write a detailed story/script text (~1000 words) for the following section. 
+              You are a storyteller/narator and must write a detailed story/script text (~${neededWords} words) for the following section. 
               - Write in ${selectedView === "3rd" ? "3rd" : "1st"} person view/format.
               - Do not include scene directions or narrator markers, only the spoken text.
               - Keep the language simple, avoiding mystical or overly complex words.
@@ -431,6 +438,8 @@ const RadioFormComponent = () => {
       <div className="mt-6 mx-3">
         <h3 className="text-lg ms-2 font-semibold text-gray-800">Generated Detailed Responses:</h3>
         <div className="space-y-4 mt-4 mx-5 p-5">
+
+           {/* if sections count is more then major_sections, combine sections based on major_sections[].grouped_ids and display them like that*/}
           {generatedSections.map((section, index) => (
             <div key={index} className="p-4 bg-gray-100 rounded-lg shadow-md relative">
               <div className="flex justify-end items-start">
