@@ -11,9 +11,9 @@ const RadioFormComponent = () => {
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState("o1-preview");
   const [selectedView, setSelectedView] = useState("3rd");
-
-  const openAIKey = "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";
-  const anthropicKey = "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";
+  
+  const openAIKey = import.meta.env.VITE_OPENAI_KEY;
+  const anthropicKey = import.meta.env.VITE_ANTHROPIC_KEY;
 
   // Sleep function
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,7 +90,7 @@ const RadioFormComponent = () => {
       const initialMessages = [
         {
           role: "user",
-          content: `You are a storyteller/narator and you have to generate JSON object that contains array of ${sectionsCount} objects
+          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount} objects
           that should have the following structure:
           {
             "id": "Section ID",
@@ -103,7 +103,7 @@ const RadioFormComponent = () => {
             "major_sections": "An array that MUST HAVE 10 OBJECTS where each object represents a major section of the script. Each object should have:"
               {
               "title": The major section title.
-              "grouped_ids": An array of IDs from the sections array representing the sections that belong to this major section.
+              "grouped_ids": An array of IDs from the sections array representing the sections that belong to this major section (NUMBER OF ID).
               }
           }
 
