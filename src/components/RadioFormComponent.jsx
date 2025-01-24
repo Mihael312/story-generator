@@ -128,12 +128,13 @@ const RadioFormComponent = () => {
       // Fetch the section titles
       const initialResponse = await callAPI(initialMessages, 2000);
 
+      let responseSections
       let titles;
       let major_sections;
 
       try {
         if (selectedModel.includes("claude")) {
-          titles = JSON.parse(
+          responseSections = JSON.parse(
             initialResponse.content[0].text
               .replace(/```json/g, "")
               .replace(/```/g, "")
@@ -146,7 +147,7 @@ const RadioFormComponent = () => {
               .trim()
           ).major_sections.map(section => section); // Extract major sections
         } else {
-          titles = JSON.parse(
+          responseSections = JSON.parse(
             initialResponse.choices[0].message.content
               .replace(/```json/g, "")
               .replace(/```/g, "")
@@ -159,13 +160,14 @@ const RadioFormComponent = () => {
               .trim()
           ).major_sections.map(section => section); // Extract major sections
         }
+        titles = responseSections.map((title, index) => ({ id: index, title }));
       } catch (error) {
         console.error("Error parsing JSON:", error);
         alert("Error parsing JSON response from the API.");
         return;
       }
       console.log("Major Sections:", major_sections);
-      console.log("Section Titles:", titles);
+      console.log("Response Sections:", titles);
 
       const batchSize = 5;
       let batchIndex = 0;
