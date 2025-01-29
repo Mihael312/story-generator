@@ -125,13 +125,11 @@ const RadioFormComponent = () => {
         }
       ];
 
-      // Fetch the section titles
-      const initialResponse = await callAPI(initialMessages, 2000);
+      // forcedModel = "o1-mini"
+      const initialResponse = await callAPI(initialMessages, 2000, "o1-preview");
 
-      let responseSections
-      let titles;
-      let major_sections;
-
+      // 2) Parse the returned JSON fully
+      let parsedObj;
       try {
         if (selectedModel.includes("claude")) {
           responseSections = JSON.parse(
