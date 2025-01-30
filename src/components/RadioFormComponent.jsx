@@ -96,13 +96,14 @@ const RadioFormComponent = () => {
       const initialMessages = [
         {
           role: "user",
-          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount} (IF NUMBER IS LESS THEN 10 CHANGE IT TO 10) objects
+          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount > 50 ? sectionsCount/2 : sectionsCount} (IF NUMBER IS LESS THEN 10 CHANGE IT TO 10) objects
           that should have the following structure:
           {
             "id": "Section ID",
             "title": "Section title",
             "format": "A concise description or example of how the section should be structured",
             "data": "Relevant data to be discussed in this section ("" if none)"
+            "summary": "A brief summary of the section"
           } 
           And one more array that should have a structure:
           {
@@ -125,13 +126,56 @@ const RadioFormComponent = () => {
         }
       ];
 
-      // forcedModel = "o1-mini"
-      const initialResponse = await callAPI(initialMessages, 2000, "o1-preview");
+      const initialMessages2 = [
+        {
+          role: "user",
+          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount/2} (IF NUMBER IS LESS THEN 10 CHANGE IT TO 10) objects
+          that should have the following structure:
+          {
+            "id": "Section ID",
+            "title": "Section title",
+            "format": "A concise description or example of how the section should be structured",
+            "data": "Relevant data to be discussed in this section ("" if none)"
+            "summary": "A brief summary of the section"
+          } 
+          And one more array that should have a structure:
+          {
+            "major_sections": "An array that MUST HAVE 10 OBJECTS where each object represents a major section of the script. Each object should have:"
+              {
+              "title": The major section title.
+              "grouped_ids": An array of IDs from the sections array representing the sections that belong to this major section (NUMBER OF ID).
+              }
+          }
 
+          The script title is ${scriptTitle}
+
+          *Ensure each section follows a logical, chronological order.* 
+
+          ***TONE AND FORMAT:*** 
+          Inspirational, story telling
+
+          ***ADDITIONAL INFO/DATA:*** 
+          ${additionalData}
+
+          THIS IS THE SECOND PART OF THE SCRIPT (2nd REQUEST); PLEASE CONTINUE FROM WHERE YOU LEFT OFF. Here is summary of previous sections and titles of last 5 sections:
+          ${sections_summary}
+          ${titles.slice(-5).map(title => title.title)}`
+        }
+      ];
+
+      // forcedModel = "o1-mini"
+
+      
+      const initialResponse = await callAPI(initialMessages, 2000, "o1-preview");
       // 2) Parse the returned JSON fully
       let responseSections
       let titles;
       let major_sections;
+      let sections_summary;
+      let responseSections2
+      let titles2
+      let major_sections2
+      let sections_summary2;
       
       try {
         if (selectedModel.includes("claude")) {
@@ -147,6 +191,12 @@ const RadioFormComponent = () => {
               .replace(/```/g, "")
               .trim()
           ).major_sections.map(section => section); // Extract major sections
+          sections_summary = JSON.parse(
+            initialResponse.content[0].text
+              .replace(/```json/g, "")
+              .replace(/```/g, "")
+              .trim()
+          ).summary.map(section => section); // Extract sections summary
         } else {
           responseSections = JSON.parse(
             initialResponse.choices[0].message.content
@@ -160,6 +210,12 @@ const RadioFormComponent = () => {
               .replace(/```/g, "")
               .trim()
           ).major_sections.map(section => section); // Extract major sections
+          sections_summary = JSON.parse(
+            initialResponse.choices[0].message.content
+              .replace(/```json/g, "")
+              .replace(/```/g, "")
+              .trim()
+          ).summary.map(section => section); // Extract sections summary
         }
         titles = responseSections.map((title, index) => ({ id: index, title }));
       } catch (error) {
@@ -167,6 +223,53 @@ const RadioFormComponent = () => {
         alert("Error parsing JSON response from the API.");
         return;
       }
+
+      // make 2nd request to get sections if sectionsCount > 50
+      if (sectionsCount > 50) {
+        await initialResponse; // wait for the first response
+        const secondInitialResponse = await callAPI(initialMessages2, 2000, "o1-preview");
+        try {
+          if (selectedModel.includes("claude")) {
+        responseSections2 = JSON.parse(
+          secondInitialResponse.content[0].text
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim()
+        ).sections.map(section => section.title); // Extract titles
+        major_sections2 = JSON.parse(
+          secondInitialResponse.content[0].text
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim()
+        ).major_sections.map(section => section); // Extract major sections
+          } else {
+        responseSections2 = JSON.parse(
+          secondInitialResponse.choices[0].message.content
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim()
+        ).sections.map(section => section.title); // Extract titles
+        major_sections2 = JSON.parse(
+          secondInitialResponse.choices[0].message.content
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim()
+        ).major_sections.map(section => section); // Extract major sections
+          }
+          titles2 = responseSections.map((title, index) => ({ id: index, title }));
+        } catch (error) {
+          console.error("Error parsing JSON:", error);
+          alert("Error parsing JSON response from the API.");
+          return;
+        }
+
+        // Combine the results
+        responseSections = [...responseSections, ...responseSections2];
+        titles = [...titles, ...titles2];
+        major_sections = [...major_sections, ...major_sections2];
+        sections_summary = [...sections_summary, ...sections_summary2];
+      }
+
       console.log("Major Sections:", major_sections);
       console.log("Response Sections:", titles);
 
