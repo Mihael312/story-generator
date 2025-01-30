@@ -7,34 +7,20 @@ const RadioFormComponent = () => {
   const [additionalData, setAdditionalData] = useState("");
   const [excludedWords, setExcludedWords] = useState("");
   const [desiredWordCount, setDesiredWordCount] = useState("");
-
-  // Store the parsed JSON data in state
-  const [sectionsData, setSectionsData] = useState([]);        // Will contain all "sections"
-  const [majorSectionsData, setMajorSectionsData] = useState([]); // Will contain the "major_sections"
-
-  // Keep track of content for each section (keyed by the section's id)
-  const [sectionContents, setSectionContents] = useState({});
-
+  const [generatedSections, setGeneratedSections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState("o1-preview");
   const [selectedView, setSelectedView] = useState("3rd");
-
-  // For demo: This is your key. Ideally, put your key in .env and reference it with import.meta.env.VITE_OPENAI_KEY
-  const openAIKey = ""
-  const anthropicKey = ""
+  
+  const openAIKey = import.meta.env.VITE_OPENAI_KEY;
+  const anthropicKey = import.meta.env.VITE_ANTHROPIC_KEY;
 
   // Sleep function
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  /**
-   * Universal function to call either Anthropic or OpenAI.
-   * If `forcedModel` is supplied, that overrides whatever is in `selectedModel`.
-   */
-  const callAPI = async (messages, maxTokens, forcedModel = null) => {
-    // figure out which model to use
-    const modelToUse = forcedModel || selectedModel;  // override if forcedModel provided
+  const callAPI = async (messages, maxTokens) => {
+    const isAnthropic = selectedModel.includes("claude");
 
-    const isAnthropic = modelToUse.includes("claude");
     const endpoint = isAnthropic
       ? "https://api.anthropic.com/v1/messages"
       : "https://api.openai.com/v1/chat/completions";
@@ -51,13 +37,11 @@ const RadioFormComponent = () => {
           "Content-type": "application/json",
         };
 
-    let modelName = modelToUse;
-    // Custom model override if Claude is selected
-    if (modelToUse.includes("claude")) {
+    let modelName = selectedModel;
+    if (selectedModel.includes("claude")) {
       modelName = "claude-3-5-sonnet-20241022";
     }
 
-    // Build request body
     let body;
     if (isAnthropic) {
       // Anthropic format
@@ -84,12 +68,6 @@ const RadioFormComponent = () => {
     return response.json();
   };
 
-  /**
-   * Generate the script by:
-   * 1) Getting the JSON structure of sections + major_sections (ALWAYS with o1-mini).
-   * 2) Parsing + storing them in state.
-   * 3) Generating text for each smaller section (using the selected model).
-   */
   const handleGenerateScript = async () => {
     if (!scriptTitle || !desiredWordCount) {
       alert("Please enter a title and specify the word count.");
@@ -97,19 +75,16 @@ const RadioFormComponent = () => {
     }
 
     setLoading(true);
-    // Reset data in state
-    setSectionsData([]);
-    setMajorSectionsData([]);
-    setSectionContents({});
+    setGeneratedSections([]);
 
     try {
-      // Decide how many sections to request from the first call
       let sectionsCount;
-      let neededWords = 1000;
-      if (desiredWordCount < 10000) {
+
+      let neededWords = 1000
+      if (desiredWordCount < 10000){
         neededWords = Math.max(100, Math.floor((desiredWordCount - 1000) / 1000) * 100);
       }
-
+        
       // Original formula for o1-preview
       if (selectedModel === "o1-preview") {
         sectionsCount = desiredWordCount > 1200 ? Math.ceil(desiredWordCount / 1200) : 1;
@@ -118,22 +93,17 @@ const RadioFormComponent = () => {
         sectionsCount = desiredWordCount > 770 ? Math.ceil(desiredWordCount / 770) : 1;
       }
 
-      // Minimum of 10
-      if (sectionsCount < 10) {
-        sectionsCount = 10;
-      }
-
-      // 1) FIRST CALL: Generate the JSON structure using "o1-mini" ONLY
       const initialMessages = [
         {
           role: "user",
-          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount} (IF NUMBER IS LESS THEN 10 CHANGE IT TO 10) objects
+          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount > 50 ? sectionsCount/2 : sectionsCount} (IF NUMBER IS LESS THEN 10 CHANGE IT TO 10) objects
           that should have the following structure:
           {
             "id": "Section ID",
             "title": "Section title",
             "format": "A concise description or example of how the section should be structured",
             "data": "Relevant data to be discussed in this section ("" if none)"
+            "summary": "A brief summary of the section"
           } 
           And one more array that should have a structure:
           {
@@ -148,14 +118,12 @@ const RadioFormComponent = () => {
 
           *Ensure each section follows a logical, chronological order.* 
 
-***TONE AND FORMAT:*** 
-Inspirational, story telling
+          ***TONE AND FORMAT:*** 
+          Inspirational, story telling
 
-***ADDITIONAL INFO/DATA:*** 
-${additionalData}
-
-***Make sure you only return valid JSON (no code blocks).***`
-        },
+          ***ADDITIONAL INFO/DATA:*** 
+          ${additionalData}`
+        }
       ];
 
       const initialMessages2 = [
@@ -196,19 +164,22 @@ ${additionalData}
       ];
 
       // forcedModel = "o1-mini"
-      const initialResponse = await callAPI(initialMessages, 2000, "o1-preview");
 
+      
+      const initialResponse = await callAPI(initialMessages, 2000, "o1-preview");
       // 2) Parse the returned JSON fully
       let responseSections
       let titles;
       let major_sections;
+      let sections_summary;
+      let responseSections2
+      let titles2
+      let major_sections2
+      let sections_summary2;
       
       try {
-        if (selectedModel.includes("claude") & !forcedModel) {
-          // For Anthropics, the top-level might differ, but let's attempt straightforward parse
-          console.log(selectedModel)
-          console.log(initialResponse)
-          parsedObj = JSON.parse(
+        if (selectedModel.includes("claude")) {
+          responseSections = JSON.parse(
             initialResponse.content[0].text
               .replace(/```json/g, "")
               .replace(/```/g, "")
@@ -220,11 +191,14 @@ ${additionalData}
               .replace(/```/g, "")
               .trim()
           ).major_sections.map(section => section); // Extract major sections
+          sections_summary = JSON.parse(
+            initialResponse.content[0].text
+              .replace(/```json/g, "")
+              .replace(/```/g, "")
+              .trim()
+          ).summary.map(section => section); // Extract sections summary
         } else {
-          // For OpenAI
-          console.log(selectedModel)
-          console.log(initialResponse)
-          parsedObj = JSON.parse(
+          responseSections = JSON.parse(
             initialResponse.choices[0].message.content
               .replace(/```json/g, "")
               .replace(/```/g, "")
@@ -236,96 +210,125 @@ ${additionalData}
               .replace(/```/g, "")
               .trim()
           ).major_sections.map(section => section); // Extract major sections
+          sections_summary = JSON.parse(
+            initialResponse.choices[0].message.content
+              .replace(/```json/g, "")
+              .replace(/```/g, "")
+              .trim()
+          ).summary.map(section => section); // Extract sections summary
         }
         titles = responseSections.map((title, index) => ({ id: index, title }));
       } catch (error) {
         console.error("Error parsing JSON:", error);
         alert("Error parsing JSON response from the API.");
-        setLoading(false);
         return;
       }
+
+      // make 2nd request to get sections if sectionsCount > 50
+      if (sectionsCount > 50) {
+        await initialResponse; // wait for the first response
+        const secondInitialResponse = await callAPI(initialMessages2, 2000, "o1-preview");
+        try {
+          if (selectedModel.includes("claude")) {
+        responseSections2 = JSON.parse(
+          secondInitialResponse.content[0].text
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim()
+        ).sections.map(section => section.title); // Extract titles
+        major_sections2 = JSON.parse(
+          secondInitialResponse.content[0].text
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim()
+        ).major_sections.map(section => section); // Extract major sections
+          } else {
+        responseSections2 = JSON.parse(
+          secondInitialResponse.choices[0].message.content
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim()
+        ).sections.map(section => section.title); // Extract titles
+        major_sections2 = JSON.parse(
+          secondInitialResponse.choices[0].message.content
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim()
+        ).major_sections.map(section => section); // Extract major sections
+          }
+          titles2 = responseSections.map((title, index) => ({ id: index, title }));
+        } catch (error) {
+          console.error("Error parsing JSON:", error);
+          alert("Error parsing JSON response from the API.");
+          return;
+        }
+
+        // Combine the results
+        responseSections = [...responseSections, ...responseSections2];
+        titles = [...titles, ...titles2];
+        major_sections = [...major_sections, ...major_sections2];
+        sections_summary = [...sections_summary, ...sections_summary2];
+      }
+
       console.log("Major Sections:", major_sections);
       console.log("Response Sections:", titles);
 
       const batchSize = 5;
       let batchIndex = 0;
 
-      // Temporary dictionary to store content keyed by the ID
-      let tempSectionContents = {};
 
-      while (batchIndex * batchSize < sections.length) {
-        const batch = sections.slice(
-          batchIndex * batchSize,
-          batchIndex * batchSize + batchSize
-        );
+      while (batchIndex * batchSize < titles.length) {
+        const batch = titles.slice(batchIndex * batchSize, batchIndex * batchSize + batchSize);
 
-        const batchPromises = batch.map(async (sec, idx) => {
-          // Identify the previous and next section for continuity
-          const currentIndex = batchIndex * batchSize + idx;
-          const prevSectionTitle =
-            currentIndex > 0 ? sections[currentIndex - 1].title : "There is no Previous section";
-          const nextSectionTitle =
-            currentIndex < sections.length - 1
-              ? sections[currentIndex + 1].title
-              : "There is no Next section";
+        const batchPromises = batch.map(async (titleObj, index) => {
+          const currentIndex = batchIndex * batchSize + index;
+          const prevSection = currentIndex > 0 ? titles[currentIndex - 1].title : "There is no Previous section";
+          const nextSection = currentIndex < titles.length - 1 ? titles[currentIndex + 1].title : "There is no Next section";
 
           const contentMessages = [
             {
               role: "user",
               content: `
-You are a storyteller/narrator. Write a detailed story/script (~${neededWords} words) for the following section:
+              You are a storyteller/narator and must write a detailed story/script text (~${neededWords} words) for the following section. 
+              - Write in ${selectedView === "3rd" ? "3rd" : "1st"} person view/format.
+              - Do not include scene directions or narrator markers, only the spoken text.
+              - Keep the language simple, avoiding mystical or overly complex words.
+              - Don't use the welcoming phrases at the beginning of the sections
+              - Ensure coherence and flow from the previous section to this one.
+              - If possible, exclude these words: ${excludedWords}
 
-- Write in ${
-                selectedView === "3rd"
-                  ? "3rd person"
-                  : "1st person"
-              }.
-- Do not include scene directions or narrator markers, only the spoken text.
-- No welcoming phrases at the beginning.
-- Keep language simple, avoid mystical or overly complex terms.
-- Ensure coherence and flow from the previous section to this one.
-- If possible, exclude these words: ${excludedWords}
+              Title: ${titleObj.title}
+              Domain: ${scriptTitle}
 
-Title: ${sec.title}
-Domain: ${scriptTitle}
-
-Current Section: ${sec.title}
-Previous Section: ${prevSectionTitle}
-Next Section: ${nextSectionTitle}`
+              Current Section: ${titleObj.title}
+              Previous Section: ${prevSection}
+              Next Section: ${nextSection}`
             }
           ];
 
           try {
-            // For content generation, we use the user's selected model (no forced override).
             const contentResponse = await callAPI(contentMessages, 2000);
-
             const content = selectedModel.includes("claude")
               ? contentResponse.content[0].text
               : contentResponse.choices[0].message.content;
 
-            // Store in the dictionary keyed by the ID
-            tempSectionContents[sec.id] = content;
+            return { title: titleObj, content };
           } catch (error) {
-            console.error(`Error fetching content for section ID: ${sec.id}`, error);
-            tempSectionContents[sec.id] = "Error fetching content";
+            console.error(`Error fetching content for title: ${titleObj.title}`, error);
+            return { title: titleObj, content: "Error fetching content" };
           }
         });
 
-        await Promise.all(batchPromises);
-
-        // Update global state as we go
-        setSectionContents({ ...tempSectionContents });
+        const results = await Promise.all(batchPromises);
+        setGeneratedSections((prev) => [...prev, ...results]);
 
         batchIndex++;
 
-        // If there are more sections to process, wait to avoid rate limits
-        if (batchIndex * batchSize < sections.length) {
+        // If there are more sections to generate, wait for a minute (to avoid rate limits)
+        if (batchIndex * batchSize < titles.length) {
           await sleep(60000);
         }
       }
-
-      // Final update of the state with all sections
-      setSectionContents({ ...tempSectionContents });
 
     } catch (error) {
       console.error("Error during script generation:", error);
@@ -334,60 +337,32 @@ Next Section: ${nextSectionTitle}`
     }
   };
 
-  /**
-   * Build 10 final sections from majorSectionsData by concatenating 
-   * the relevant smaller sections (based on grouped_ids).
-   */
-  const buildFinalSections = () => {
-    return majorSectionsData.map((majorSec) => {
-      const combinedContent = majorSec.grouped_ids
-        .map((secId) => sectionContents[secId] || "")
-        .join("\n\n");
-
-      return {
-        title: majorSec.title,
-        content: combinedContent,
-      };
-    });
-  };
-
-  /**
-   * Download the final 10 major sections as a Word doc
-   */
   const handleDownloadDoc = () => {
-    // Build the major-sections-based grouping
-    const finalSections = buildFinalSections();
-
-    // Create docx
     const doc = new Document({
       sections: [
         {
           properties: {},
-          children: finalSections
+          children: generatedSections
             .map((section) => {
-              // Split combined content by lines
               const paragraphs = section.content.split("\n").map((line) => {
-                let formattedLine = line
-                  .replace(/<b>(.*?)<\/b>/g, "**$1**")
-                  .replace(/<i>(.*?)<\/i>/g, "_$1_");
+                let formattedLine = line;
+
+                // Replace <b> and <i> tags
+                formattedLine = formattedLine.replace(/<b>(.*?)<\/b>/g, "**$1**");
+                formattedLine = formattedLine.replace(/<i>(.*?)<\/i>/g, "_$1_");
+
+                const textRun = new TextRun(formattedLine);
                 return new Paragraph({
-                  children: [new TextRun(formattedLine)],
+                  children: [textRun],
                 });
               });
-              return [
-                new Paragraph({
-                  children: [new TextRun({ text: section.title, bold: true })],
-                }),
-                ...paragraphs,
-                new Paragraph({ children: [] }), // blank line
-              ];
+              return paragraphs;
             })
             .flat(),
         },
       ],
     });
 
-    // Convert to Blob and download
     Packer.toBlob(doc).then((blob) => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -415,13 +390,9 @@ Next Section: ${nextSectionTitle}`
     return text.split(/\s+/).filter(word => word.length > 0).length;
   };
 
-  // Build the final 10 sections (each a concatenation of one or more original sections)
-  const finalMajorSections = buildFinalSections();
-
   return (
     <>
       <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-md">
-        {/* Select AI Model */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Select AI Model:
@@ -437,7 +408,6 @@ Next Section: ${nextSectionTitle}`
           </select>
         </div>
 
-        {/* Script Title */}
         <div className="mb-6">
           <label
             htmlFor="scriptTitle"
@@ -455,7 +425,6 @@ Next Section: ${nextSectionTitle}`
           />
         </div>
 
-        {/* Additional Data */}
         <div className="mb-6">
           <label
             htmlFor="additionalData"
@@ -473,7 +442,6 @@ Next Section: ${nextSectionTitle}`
           />
         </div>
 
-        {/* Excluded Words */}
         <div className="mb-6">
           <label
             htmlFor="excludedWords"
@@ -491,7 +459,6 @@ Next Section: ${nextSectionTitle}`
           />
         </div>
 
-        {/* Desired Word Count */}
         <div className="mb-6">
           <label
             htmlFor="desiredWordCount"
@@ -512,7 +479,6 @@ Next Section: ${nextSectionTitle}`
           />
         </div>
 
-        {/* View Format Radio Buttons */}
         <div className="mb-6">
           <div className="flex justify-center mt-3">
             <label htmlFor="3rd">
@@ -544,7 +510,6 @@ Next Section: ${nextSectionTitle}`
           </div>
         </div>
 
-        {/* Generate Button */}
         <button
           onClick={handleGenerateScript}
           className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg shadow-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
@@ -553,7 +518,6 @@ Next Section: ${nextSectionTitle}`
         </button>
       </div>
 
-      {/* Loading Indicator */}
       {loading && (
         <div className="flex justify-center mt-6 flex-col items-center">
           <p className="mb-4 text-gray-700">This may take a few moments...</p>
@@ -566,8 +530,7 @@ Next Section: ${nextSectionTitle}`
         </div>
       )}
 
-      {/* Download Button (only shows after majorSectionsData is ready) */}
-      {!loading && majorSectionsData.length > 0 && (
+      {!loading && generatedSections.length > 0 && (
         <div className="mt-6">
           <button
             onClick={handleDownloadDoc}
@@ -578,15 +541,13 @@ Next Section: ${nextSectionTitle}`
         </div>
       )}
 
-      {/* Display the 10 Major Sections (finalMajorSections) */}
       <div className="mt-6 mx-3">
-        <h3 className="text-lg ms-2 font-semibold text-gray-800">
-          Generated Detailed Responses (10 Major Sections):
-        </h3>
+        <h3 className="text-lg ms-2 font-semibold text-gray-800">Generated Detailed Responses:</h3>
         <div className="space-y-4 mt-4 mx-5 p-5">
-          {finalMajorSections.map((section, index) => (
-            <div key={index} className="p-4 bg-gray-100 rounded-lg shadow-md relative mb-8">
-              <h4 className="text-xl font-bold mb-3">{section.title}</h4>
+
+           {/* if sections count is more then major_sections, combine sections based on major_sections[].grouped_ids and display them like that*/}
+          {generatedSections.map((section, index) => (
+            <div key={index} className="p-4 bg-gray-100 rounded-lg shadow-md relative">
               <div className="flex justify-end items-start">
                 <div className="text-sm mb-3 text-gray-500">
                   {getWordCount(section.content)} words
