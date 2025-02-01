@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Document, Packer, Paragraph, TextRun } from "docx";
-import Markdown from 'react-markdown';
+import Markdown from "react-markdown";
+import { initialMessages, initialMessages2 } from "./initialMessages";
 
 const RadioFormComponent = () => {
   const [scriptTitle, setScriptTitle] = useState("");
@@ -11,7 +12,7 @@ const RadioFormComponent = () => {
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState("o1-preview");
   const [selectedView, setSelectedView] = useState("3rd");
-  
+
   const openAIKey = import.meta.env.VITE_OPENAI_KEY;
   const anthropicKey = import.meta.env.VITE_ANTHROPIC_KEY;
 
@@ -80,143 +81,71 @@ const RadioFormComponent = () => {
     try {
       let sectionsCount;
 
-      let neededWords = 1000
-      if (desiredWordCount < 10000){
-        neededWords = Math.max(100, Math.floor((desiredWordCount - 1000) / 1000) * 100);
+      let neededWords = 1000;
+      if (desiredWordCount < 10000) {
+        neededWords = Math.max(
+          100,
+          Math.floor((desiredWordCount - 1000) / 1000) * 100
+        );
       }
-        
+
       // Original formula for o1-preview
       if (selectedModel === "o1-preview") {
-        sectionsCount = desiredWordCount > 1200 ? Math.ceil(desiredWordCount / 1200) : 1;
+        sectionsCount =
+          desiredWordCount > 1200 ? Math.ceil(desiredWordCount / 1200) : 1;
       } else {
         // New formula for claude 3.5 sonnet and gpt-4o
-        sectionsCount = desiredWordCount > 770 ? Math.ceil(desiredWordCount / 770) : 1;
+        sectionsCount =
+          desiredWordCount > 770 ? Math.ceil(desiredWordCount / 770) : 1;
       }
 
-      const initialMessages = [
-        {
-          role: "user",
-          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount > 50 ? sectionsCount/2 : sectionsCount} (IF NUMBER IS LESS THEN 10 CHANGE IT TO 10) objects
-          that should have the following structure:
-          {
-            "id": "Section ID",
-            "title": "Section title",
-            "format": "A concise description or example of how the section should be structured",
-            "data": "Relevant data to be discussed in this section ("" if none)"
-            "summary": "A brief summary of the section"
-          } 
-          And one more array that should have a structure:
-          {
-            "major_sections": "An array that MUST HAVE 10 OBJECTS where each object represents a major section of the script. Each object should have:"
-              {
-              "title": The major section title.
-              "grouped_ids": An array of IDs from the sections array representing the sections that belong to this major section (NUMBER OF ID).
-              }
-          }
+      let sections_summary = [];
 
-          The script title is ${scriptTitle}
+      const initialMessagesArray = initialMessages(
+        scriptTitle,
+        additionalData,
+        sectionsCount
+      );
 
-          *Ensure each section follows a logical, chronological order.* 
+      const initialResponse = await callAPI(
+        initialMessagesArray,
+        2000,
+        "o1-preview"
+      );
 
-          ***TONE AND FORMAT:*** 
-          Inspirational, story telling
-
-          ***ADDITIONAL INFO/DATA:*** 
-          ${additionalData}`
-        }
-      ];
-
-      const initialMessages2 = [
-        {
-          role: "user",
-          content: `You are a storyteller/narator and you have to generate ONLY A JSON OBJECT that contains array of ${sectionsCount/2} (IF NUMBER IS LESS THEN 10 CHANGE IT TO 10) objects
-          that should have the following structure:
-          {
-            "id": "Section ID",
-            "title": "Section title",
-            "format": "A concise description or example of how the section should be structured",
-            "data": "Relevant data to be discussed in this section ("" if none)"
-            "summary": "A brief summary of the section"
-          } 
-          And one more array that should have a structure:
-          {
-            "major_sections": "An array that MUST HAVE 10 OBJECTS where each object represents a major section of the script. Each object should have:"
-              {
-              "title": The major section title.
-              "grouped_ids": An array of IDs from the sections array representing the sections that belong to this major section (NUMBER OF ID).
-              }
-          }
-
-          The script title is ${scriptTitle}
-
-          *Ensure each section follows a logical, chronological order.* 
-
-          ***TONE AND FORMAT:*** 
-          Inspirational, story telling
-
-          ***ADDITIONAL INFO/DATA:*** 
-          ${additionalData}
-
-          THIS IS THE SECOND PART OF THE SCRIPT (2nd REQUEST); PLEASE CONTINUE FROM WHERE YOU LEFT OFF. Here is summary of previous sections and titles of last 5 sections:
-          ${sections_summary}
-          ${titles.slice(-5).map(title => title.title)}`
-        }
-      ];
-
-      // forcedModel = "o1-mini"
-
-      
-      const initialResponse = await callAPI(initialMessages, 2000, "o1-preview");
       // 2) Parse the returned JSON fully
-      let responseSections
+      let responseSections;
       let titles;
       let major_sections;
-      let sections_summary;
-      let responseSections2
-      let titles2
-      let major_sections2
-      let sections_summary2;
-      
+      let responseSections2;
+      let titles2;
+      let major_sections2;
+
       try {
-        if (selectedModel.includes("claude")) {
-          responseSections = JSON.parse(
-            initialResponse.content[0].text
-              .replace(/```json/g, "")
-              .replace(/```/g, "")
-              .trim()
-          ).sections.map(section => section.title); // Extract titles
-          major_sections = JSON.parse(
-            initialResponse.content[0].text
-              .replace(/```json/g, "")
-              .replace(/```/g, "")
-              .trim()
-          ).major_sections.map(section => section); // Extract major sections
-          sections_summary = JSON.parse(
-            initialResponse.content[0].text
-              .replace(/```json/g, "")
-              .replace(/```/g, "")
-              .trim()
-          ).summary.map(section => section); // Extract sections summary
-        } else {
-          responseSections = JSON.parse(
-            initialResponse.choices[0].message.content
-              .replace(/```json/g, "")
-              .replace(/```/g, "")
-              .trim()
-          ).sections.map(section => section.title); // Extract titles
-          major_sections = JSON.parse(
-            initialResponse.choices[0].message.content
-              .replace(/```json/g, "")
-              .replace(/```/g, "")
-              .trim()
-          ).major_sections.map(section => section); // Extract major sections
-          sections_summary = JSON.parse(
-            initialResponse.choices[0].message.content
-              .replace(/```json/g, "")
-              .replace(/```/g, "")
-              .trim()
-          ).summary.map(section => section); // Extract sections summary
-        }
+        const parsedResponse = selectedModel.includes("claude")
+          ? JSON.parse(
+              initialResponse.content[0]?.text
+                .replace(/```json/g, "")
+                .replace(/```/g, "")
+                .trim()
+            )
+          : JSON.parse(
+              initialResponse.choices[0]?.message.content
+                .replace(/```json/g, "")
+                .replace(/```/g, "")
+                .trim()
+            );
+
+        responseSections = parsedResponse.sections?.map(
+          (section) => section.title
+        ) || []; // Extract titles
+        major_sections = parsedResponse.major_sections?.map(
+          (section) => section
+        ) || []; // Extract major sections
+        sections_summary = parsedResponse.sections?.map(
+          (section) => section.summary
+        ) || []; // Extract sections summary
+
         titles = responseSections.map((title, index) => ({ id: index, title }));
       } catch (error) {
         console.error("Error parsing JSON:", error);
@@ -226,37 +155,45 @@ const RadioFormComponent = () => {
 
       // make 2nd request to get sections if sectionsCount > 50
       if (sectionsCount > 50) {
-        await initialResponse; // wait for the first response
-        const secondInitialResponse = await callAPI(initialMessages2, 2000, "o1-preview");
+        const initialMessages2Array = initialMessages2(
+          scriptTitle,
+          additionalData,
+          sectionsCount,
+          sections_summary,
+          titles
+        );
+
+        const secondInitialResponse = await callAPI(
+          initialMessages2Array,
+          2000,
+          "o1-preview"
+        );
         try {
-          if (selectedModel.includes("claude")) {
-        responseSections2 = JSON.parse(
-          secondInitialResponse.content[0].text
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim()
-        ).sections.map(section => section.title); // Extract titles
-        major_sections2 = JSON.parse(
-          secondInitialResponse.content[0].text
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim()
-        ).major_sections.map(section => section); // Extract major sections
-          } else {
-        responseSections2 = JSON.parse(
-          secondInitialResponse.choices[0].message.content
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim()
-        ).sections.map(section => section.title); // Extract titles
-        major_sections2 = JSON.parse(
-          secondInitialResponse.choices[0].message.content
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim()
-        ).major_sections.map(section => section); // Extract major sections
-          }
-          titles2 = responseSections.map((title, index) => ({ id: index, title }));
+          const parsedSecondResponse = selectedModel.includes("claude")
+            ? JSON.parse(
+                secondInitialResponse.content[0]?.text
+                  .replace(/```json/g, "")
+                  .replace(/```/g, "")
+                  .trim()
+              )
+            : JSON.parse(
+                secondInitialResponse.choices[0]?.message.content
+                  .replace(/```json/g, "")
+                  .replace(/```/g, "")
+                  .trim()
+              );
+
+          responseSections2 = parsedSecondResponse.sections?.map(
+            (section) => section.title
+          ) || []; // Extract titles
+          major_sections2 = parsedSecondResponse.major_sections?.map(
+            (section) => section
+          ) || []; // Extract major sections
+
+          titles2 = responseSections2.map((title, index) => ({
+            id: index,
+            title,
+          }));
         } catch (error) {
           console.error("Error parsing JSON:", error);
           alert("Error parsing JSON response from the API.");
@@ -267,7 +204,6 @@ const RadioFormComponent = () => {
         responseSections = [...responseSections, ...responseSections2];
         titles = [...titles, ...titles2];
         major_sections = [...major_sections, ...major_sections2];
-        sections_summary = [...sections_summary, ...sections_summary2];
       }
 
       console.log("Major Sections:", major_sections);
@@ -276,21 +212,31 @@ const RadioFormComponent = () => {
       const batchSize = 5;
       let batchIndex = 0;
 
-
       while (batchIndex * batchSize < titles.length) {
-        const batch = titles.slice(batchIndex * batchSize, batchIndex * batchSize + batchSize);
+        const batch = titles.slice(
+          batchIndex * batchSize,
+          batchIndex * batchSize + batchSize
+        );
 
         const batchPromises = batch.map(async (titleObj, index) => {
           const currentIndex = batchIndex * batchSize + index;
-          const prevSection = currentIndex > 0 ? titles[currentIndex - 1].title : "There is no Previous section";
-          const nextSection = currentIndex < titles.length - 1 ? titles[currentIndex + 1].title : "There is no Next section";
+          const prevSection =
+            currentIndex > 0
+              ? titles[currentIndex - 1].title
+              : "There is no Previous section";
+          const nextSection =
+            currentIndex < titles.length - 1
+              ? titles[currentIndex + 1].title
+              : "There is no Next section";
 
           const contentMessages = [
             {
               role: "user",
               content: `
               You are a storyteller/narator and must write a detailed story/script text (~${neededWords} words) for the following section. 
-              - Write in ${selectedView === "3rd" ? "3rd" : "1st"} person view/format.
+              - Write in ${
+                selectedView === "3rd" ? "3rd" : "1st"
+              } person view/format.
               - Do not include scene directions or narrator markers, only the spoken text.
               - Keep the language simple, avoiding mystical or overly complex words.
               - Don't use the welcoming phrases at the beginning of the sections
@@ -302,19 +248,22 @@ const RadioFormComponent = () => {
 
               Current Section: ${titleObj.title}
               Previous Section: ${prevSection}
-              Next Section: ${nextSection}`
-            }
+              Next Section: ${nextSection}`,
+            },
           ];
 
           try {
             const contentResponse = await callAPI(contentMessages, 2000);
             const content = selectedModel.includes("claude")
-              ? contentResponse.content[0].text
-              : contentResponse.choices[0].message.content;
+              ? contentResponse.content[0]?.text
+              : contentResponse.choices[0]?.message.content;
 
             return { title: titleObj, content };
           } catch (error) {
-            console.error(`Error fetching content for title: ${titleObj.title}`, error);
+            console.error(
+              `Error fetching content for title: ${titleObj.title}`,
+              error
+            );
             return { title: titleObj, content: "Error fetching content" };
           }
         });
@@ -329,7 +278,6 @@ const RadioFormComponent = () => {
           await sleep(60000);
         }
       }
-
     } catch (error) {
       console.error("Error during script generation:", error);
     } finally {
@@ -348,7 +296,10 @@ const RadioFormComponent = () => {
                 let formattedLine = line;
 
                 // Replace <b> and <i> tags
-                formattedLine = formattedLine.replace(/<b>(.*?)<\/b>/g, "**$1**");
+                formattedLine = formattedLine.replace(
+                  /<b>(.*?)<\/b>/g,
+                  "**$1**"
+                );
                 formattedLine = formattedLine.replace(/<i>(.*?)<\/i>/g, "_$1_");
 
                 const textRun = new TextRun(formattedLine);
@@ -387,7 +338,7 @@ const RadioFormComponent = () => {
   };
 
   const getWordCount = (text) => {
-    return text.split(/\s+/).filter(word => word.length > 0).length;
+    return text.split(/\s+/).filter((word) => word.length > 0).length;
   };
 
   return (
@@ -404,7 +355,7 @@ const RadioFormComponent = () => {
           >
             <option value="o1-preview">o1-preview</option>
             <option value="claude 3.5 sonnet">claude 3.5 sonnet</option>
-            <option value="gpt-4o">gpt-4o</option>
+            <option value="gpt-4o-mini">gpt-4o</option>
           </select>
         </div>
 
@@ -435,7 +386,11 @@ const RadioFormComponent = () => {
           <textarea
             id="additionalData"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-gray-700"
-            style={{ height: "200px", resize: "vertical", whiteSpace: "pre-wrap" }}
+            style={{
+              height: "200px",
+              resize: "vertical",
+              whiteSpace: "pre-wrap",
+            }}
             value={additionalData}
             onChange={(e) => setAdditionalData(e.target.value)}
             placeholder="Enter additional data"
@@ -542,12 +497,16 @@ const RadioFormComponent = () => {
       )}
 
       <div className="mt-6 mx-3">
-        <h3 className="text-lg ms-2 font-semibold text-gray-800">Generated Detailed Responses:</h3>
+        <h3 className="text-lg ms-2 font-semibold text-gray-800">
+          Generated Detailed Responses:
+        </h3>
         <div className="space-y-4 mt-4 mx-5 p-5">
-
-           {/* if sections count is more then major_sections, combine sections based on major_sections[].grouped_ids and display them like that*/}
+          {/* if sections count is more then major_sections, combine sections based on major_sections[].grouped_ids and display them like that*/}
           {generatedSections.map((section, index) => (
-            <div key={index} className="p-4 bg-gray-100 rounded-lg shadow-md relative">
+            <div
+              key={index}
+              className="p-4 bg-gray-100 rounded-lg shadow-md relative"
+            >
               <div className="flex justify-end items-start">
                 <div className="text-sm mb-3 text-gray-500">
                   {getWordCount(section.content)} words
